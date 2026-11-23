@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartPlate — Bennett Mess Portion & Waste Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            900: '#1B3B2E',
+                            800: '#265341',
+                            700: '#2E6F56',
+                            600: '#3B8B6E',
+                            500: '#48A785',
+                            100: '#E6F4EE',
+                            50: '#F4F8F6',
+                        },
+                        accent: {
+                            gold: '#D97706',
+                            emerald: '#10B981',
+                            amber: '#F59E0B'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        .plate-glow {
+            box-shadow: 0 0 25px rgba(46, 111, 86, 0.15);
+        }
+        .toast-slide {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col text-slate-800 bg-slate-100">
+
+    <!-- Toast Notification System -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Main Navigation Header -->
+    <header class="bg-brand-900 text-white shadow-lg sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- University & App Logo -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-700 flex items-center justify-center text-accent-amber font-extrabold text-xl shadow-inner border border-brand-500/30">
+                        <i class="fa-solid fa-leaf"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-lg tracking-tight text-white">SmartPlate</span>
+                            <span class="bg-emerald-500/20 text-emerald-300 text-xs font-semibold px-2 py-0.5 rounded border border-emerald-500/30">SDG 12 Pilot</span>
+                        </div>
+                        <p class="text-xs text-brand-100/70 hidden sm:block">Bennett University • BMI-TREP Semester 1 Action Lab</p>
+                    </div>
+                </div>
+
+                <!-- Global Live Metrics Ticker -->
+                <div class="hidden lg:flex items-center space-x-6 text-xs bg-brand-800/80 px-4 py-2 rounded-lg border border-brand-700">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span class="text-slate-300">Campus Waste Target:</span>
+                        <span class="font-bold text-white"><span id="header-waste-avg">81.0</span>g / diner</span>
+                    </div>
+                    <div class="h-4 w-px bg-brand-700"></div>
+                    <div>
+                        <span class="text-slate-300">Waste Reduction:</span>
+                        <span class="font-bold text-emerald-400">-33.6%</span>
+                    </div>
+                    <div class="h-4 w-px bg-brand-700"></div>
+                    <div>
+                        <span class="text-slate-300">Pledges Today:</span>
+                        <span id="header-pledge-count" class="font-bold text-accent-amber">142</span>
+                    </div>
+                </div>
+
+                <!-- Main Navigation Tabs -->
+                <nav class="flex space-x-1 sm:space-x-2">
+                    <button onclick="switchTab('kiosk')" id="nav-kiosk" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-2 bg-brand-700 text-white shadow">
+                        <i class="fa-solid fa-utensils"></i>
+                        <span class="hidden sm:inline">Portion Kiosk</span>
+                    </button>
+                    <button onclick="switchTab('scale')" id="nav-scale" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:text-white hover:bg-brand-800 transition-all flex items-center space-x-2">
+                        <i class="fa-solid fa-weight-scale"></i>
+                        <span class="hidden sm:inline">Dish-Drop Logger</span>
+                    </button>
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:text-white hover:bg-brand-800 transition-all flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span class="hidden sm:inline">Impact Dashboard</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- App Body Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ================= TAB 1: STUDENT PORTION KIOSK ================= -->
+        <section id="tab-kiosk" class="tab-content space-y-6">
+            <!-- Banner Intro -->
+            <div class="bg-gradient-to-r from-brand-900 via-brand-800 to-brand-700 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
+                <div class="relative z-10 max-w-3xl">
+                    <div class="inline-flex items-center space-x-2 bg-accent-gold/20 text-accent-gold px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 border border-accent-gold/30">
+                        <i class="fa-solid fa-bolt"></i>
+                        <span>Zero-Friction Behavioral Nudge</span>
+                    </div>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Smart Portion Recommendation Engine</h1>
+                    <p class="mt-2 text-sm text-brand-100 leading-relaxed">
+                        Select your appetite and mess menu choices below. SmartPlate calculates your visual "Smart Start" portion to minimize edible waste while ensuring unlimited fast-track refills if you're still hungry!
+                    </p>
+                </div>
+                <i class="fa-solid fa-bowl-food absolute -right-6 -bottom-8 text-9xl text-white/5 pointer-events-none"></i>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Left Input Controls (5 Cols) -->
+                <div class="lg:col-span-5 space-y-6">
+                    <!-- Hunger Selector -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                            Step 1: How hungry are you right now?
+                        </label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <button onclick="setHunger('light')" id="hunger-light" class="hunger-btn p-3 rounded-xl border-2 border-slate-200 flex flex-col items-center justify-center transition-all hover:border-brand-500">
+                                <span class="text-2xl mb-1">🥗</span>
+                                <span class="text-xs font-bold text-slate-700">Light</span>
+                                <span class="text-[10px] text-slate-400">Quick bite</span>
+                            </button>
+                            <button onclick="setHunger('medium')" id="hunger-medium" class="hunger-btn p-3 rounded-xl border-2 border-brand-600 bg-brand-50/50 flex flex-col items-center justify-center transition-all shadow-sm">
+                                <span class="text-2xl mb-1">🍲</span>
+                                <span class="text-xs font-bold text-brand-900">Standard</span>
+                                <span class="text-[10px] text-slate-500">Regular meal</span>
+                            </button>
+                            <button onclick="setHunger('hungry')" id="hunger-hungry" class="hunger-btn p-3 rounded-xl border-2 border-slate-200 flex flex-col items-center justify-center transition-all hover:border-brand-500">
+                                <span class="text-2xl mb-1">🍛</span>
+                                <span class="text-xs font-bold text-slate-700">Hungry</span>
+                                <span class="text-[10px] text-slate-400">Full meal</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Today's Mess Menu Items -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                Step 2: Select Today's Mess Items
+                            </label>
+                            <span class="text-[11px] font-medium text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full">Bennett Mess Wing B</span>
+                        </div>
+
+                        <div class="space-y-2 max-h-72 overflow-y-auto pr-1" id="menu-checklist">
+                            <!-- Items dynamically populated JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Visual Plate Preview & Refill Pass Token (7 Cols) -->
+                <div class="lg:col-span-7 space-y-6">
+                    <!-- Plate Recommendation Card -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 plate-glow relative flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                                <div>
+                                    <h2 class="text-lg font-bold text-slate-900">Your Recommended "Smart Start" Portion</h2>
+                                    <p class="text-xs text-slate-500">Designed to eliminate baseline 122g food waste miscalculations</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-slate-400 block">Est. Waste Prevented</span>
+                                    <span id="kiosk-waste-prevented" class="text-xl font-black text-brand-700">+45g</span>
+                                </div>
+                            </div>
+
+                            <!-- Graphic Visual Plate Representation -->
+                            <div class="my-6 bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col md:flex-row items-center justify-around gap-6">
+                                <!-- Interactive Circle Plate Diagram -->
+                                <div class="relative w-48 h-48 rounded-full border-4 border-slate-300 bg-white shadow-inner flex items-center justify-center p-2">
+                                    <div class="w-full h-full rounded-full border border-dashed border-brand-300 grid grid-cols-2 gap-1 p-2 bg-emerald-50/30">
+                                        <div class="bg-amber-100/70 rounded-tl-full flex flex-col items-center justify-center p-1 text-center">
+                                            <span class="text-xs font-bold text-amber-900" id="plate-carbs-title">Carbs</span>
+                                            <span class="text-[10px] text-amber-700" id="plate-carbs-qty">1 Scoop</span>
+                                        </div>
+                                        <div class="bg-emerald-100/70 rounded-tr-full flex flex-col items-center justify-center p-1 text-center">
+                                            <span class="text-xs font-bold text-emerald-900" id="plate-curry-title">Curry/Dal</span>
+                                            <span class="text-[10px] text-emerald-700" id="plate-curry-qty">1 Ladle</span>
+                                        </div>
+                                        <div class="bg-yellow-100/70 rounded-bl-full flex flex-col items-center justify-center p-1 text-center">
+                                            <span class="text-xs font-bold text-yellow-900">Bread</span>
+                                            <span class="text-[10px] text-yellow-700" id="plate-bread-qty">2 Rotis</span>
+                                        </div>
+                                        <div class="bg-teal-100/70 rounded-br-full flex flex-col items-center justify-center p-1 text-center">
+                                            <span class="text-xs font-bold text-teal-900">Sides</span>
+                                            <span class="text-[10px] text-teal-700" id="plate-sides-qty">Small Bowl</span>
+                                        </div>
+                                    </div>
+                                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <span class="bg-white shadow text-[10px] font-bold text-brand-800 px-2 py-0.5 rounded-full border border-slate-200">
+                                            Smart Portion
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Itemized Smart Portion Breakdown -->
+                                <div class="flex-1 space-y-2 text-xs w-full" id="portion-breakdown">
+                                    <!-- Dynamic List -->
+                                </div>
+                            </div>
+
+                            <!-- Fast-Track Refill Pass Token Badge -->
+                            <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center space-x-4">
+                                <div class="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center text-xl shadow flex-shrink-0">
+                                    <i class="fa-solid fa-ticket"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="font-bold text-amber-900 text-sm">Fast-Track Refill Pass Issued</h3>
+                                        <span class="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded font-bold uppercase">Unlimited</span>
+                                    </div>
+                                    <p class="text-xs text-amber-800 mt-0.5">
+                                        "Start Small, Come Back for More!" If you finish this initial portion, skip the main queue for immediate second helpings.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Confirm Pledge Action Button -->
+                        <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                            <span class="text-xs text-slate-500">
+                                <i class="fa-solid fa-shield-halved text-brand-600 mr-1"></i>
+                                100% Student Satisfaction Guaranteed
+                            </span>
+                            <button onclick="confirmPledge()" class="bg-brand-700 hover:bg-brand-800 text-white font-bold px-6 py-3 rounded-xl transition shadow-md hover:shadow-lg flex items-center space-x-2 text-sm">
+                                <span>Confirm Smart Portion</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ================= TAB 2: DISH-DROP SCALE & LIVE LOGGER ================= -->
+        <section id="tab-scale" class="tab-content hidden space-y-6">
+            <!-- Header Banner -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div>
+                    <h1 class="text-xl font-bold text-slate-900">Mess Dish-Drop Scale & Real-Time Audit Station</h1>
+                    <p class="text-xs text-slate-500">Simulate or log post-meal plate waste directly from dish disposal return racks</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-semibold text-slate-600">Active Audit Session:</span>
+                    <span class="bg-brand-100 text-brand-800 text-xs font-bold px-3 py-1 rounded-full border border-brand-200">
+                        Nov 23, 2026 • Lunch Peak
+                    </span>
+                </div>
+            </div>
+
+            <!-- KPI Cards Strip -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div class="text-xs font-medium text-slate-500 mb-1">Avg Waste / Diner</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="kpi-avg-waste" class="text-2xl font-black text-slate-900">81.0g</span>
+                        <span class="text-xs font-semibold text-emerald-600">-33.6%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">Vs 122.0g Baseline</div>
+                </div>
+
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div class="text-xs font-medium text-slate-500 mb-1">Total Food Saved</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="kpi-total-saved" class="text-2xl font-black text-brand-700">45.9 kg</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">Across 7-Day Pilot</div>
+                </div>
+
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div class="text-xs font-medium text-slate-500 mb-1">Smart Portion Adoption</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="kpi-adoption-rate" class="text-2xl font-black text-accent-gold">74.2%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">Dinners & Lunches</div>
+                </div>
+
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div class="text-xs font-medium text-slate-500 mb-1">Refills Redeemed</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="kpi-refill-count" class="text-2xl font-black text-indigo-600">312</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">Zero-Waste Refills</div>
+                </div>
+            </div>
+
+            <!-- Form & Table Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Digital Scale Entry Simulator Form (4 Cols) -->
+                <div class="lg:col-span-4 bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex items-center space-x-2 pb-3 border-b border-slate-100">
+                        <i class="fa-solid fa-weight-scale text-brand-700 text-lg"></i>
+                        <h2 class="font-bold text-slate-900 text-sm">Digital Scale Input</h2>
+                    </div>
+
+                    <form id="scale-log-form" onsubmit="handleScaleSubmit(event)" class="space-y-3 text-xs">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Primary Food Item Wasted</label>
+                            <select id="log-item" class="w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+                                <option value="Steamed Rice">Steamed Rice / Khichdi</option>
+                                <option value="Dal Tadka">Dal / Gravy</option>
+                                <option value="Roti / Chapati">Roti / Naan</option>
+                                <option value="Paneer / Sabzi">Paneer / Mixed Sabzi</option>
+                                <option value="Salad & Curd">Salad / Curd / Raita</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Plate Waste Weight (Grams)</label>
+                            <div class="relative">
+                                <input type="number" id="log-weight" min="5" max="500" value="45" required class="w-full p-2.5 pr-12 text-sm font-bold rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none">
+                                <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">grams</span>
+                            </div>
+                            <span class="text-[10px] text-slate-400">Baseline average was 122g per plate.</span>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Meal Session</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="flex items-center space-x-2 p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                                    <input type="radio" name="session" value="Lunch" checked class="text-brand-600 focus:ring-brand-500">
+                                    <span>Lunch</span>
+                                </label>
+                                <label class="flex items-center space-x-2 p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                                    <input type="radio" name="session" value="Dinner" class="text-brand-600 focus:ring-brand-500">
+                                    <span>Dinner</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Did Diner Use Smart Portion Kiosk?</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="flex items-center space-x-2 p-2 border border-emerald-200 bg-emerald-50/50 rounded-lg cursor-pointer">
+                                    <input type="radio" name="used_smart" value="Yes" checked class="text-emerald-600 focus:ring-emerald-500">
+                                    <span class="font-bold text-emerald-900">Yes (Smart Portion)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 p-2 border border-slate-200 rounded-lg cursor-pointer">
+                                    <input type="radio" name="used_smart" value="No" class="text-slate-600 focus:ring-slate-500">
+                                    <span class="text-slate-700">No (Standard)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full py-3 bg-brand-700 hover:bg-brand-800 text-white font-bold rounded-xl transition shadow flex items-center justify-center space-x-2 mt-4">
+                            <i class="fa-solid fa-plus-circle"></i>
+                            <span>Log Scale Weighing Entry</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Live Audit Log Table (8 Cols) -->
+                <div class="lg:col-span-8 bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div>
+                            <h2 class="font-bold text-slate-900 text-sm">Real-Time Mess Dish-Drop Audit Log</h2>
+                            <p class="text-[11px] text-slate-400">Live data logged during campus pilot (16 Nov – 23 Nov 2026)</p>
+                        </div>
+                        <button onclick="resetAuditLog()" class="text-xs text-slate-400 hover:text-red-600 flex items-center space-x-1">
+                            <i class="fa-solid fa-rotate-right"></i>
+                            <span>Reset Sample Data</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th class="p-2.5">Time / Date</th>
+                                    <th class="p-2.5">Session</th>
+                                    <th class="p-2.5">Food Item</th>
+                                    <th class="p-2.5">Waste Weight</th>
+                                    <th class="p-2.5">Smart Portion?</th>
+                                    <th class="p-2.5 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body" class="divide-y divide-slate-100">
+                                <!-- Populated dynamically by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ================= TAB 3: PILOT IMPACT & BU100 DASHBOARD ================= -->
+        <section id="tab-dashboard" class="tab-content hidden space-y-6">
+            <!-- Header -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-xl font-bold text-slate-900">SDG 12 Pilot Impact & BU100 Evidence Dashboard</h1>
+                    <p class="text-xs text-slate-500">Empirical measurement comparing Baseline (16-18 Nov) vs Pilot Intervention (19-22 Nov)</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full">
+                        <i class="fa-solid fa-check-circle mr-1"></i> Verified Audit Data (n=1,120 Diners)
+                    </span>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Daily Waste Trend Chart (7 Cols) -->
+                <div class="lg:col-span-7 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="font-bold text-slate-900 text-sm">Average Plate Waste per Diner (Grams)</h2>
+                            <p class="text-[11px] text-slate-400">Baseline (122.0g) vs. SmartPlate Pilot (81.0g)</p>
+                        </div>
+                        <span class="text-xs font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                            -33.6% Impact
+                        </span>
+                    </div>
+                    <div class="h-64 relative">
+                        <canvas id="chart-daily-waste"></canvas>
+                    </div>
+                </div>
+
+                <!-- Pre vs Post Survey Radar / Bar Chart (5 Cols) -->
+                <div class="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="font-bold text-slate-900 text-sm">Student Survey Behavior Shift</h2>
+                            <p class="text-[11px] text-slate-400">Pre- vs. Post-Pilot Survey (n=25 students)</p>
+                        </div>
+                    </div>
+                    <div class="h-64 relative">
+                        <canvas id="chart-survey-shift"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BU100 Reading Integration Cards -->
+            <div class="space-y-3">
+                <h2 class="text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Application of BU100 Core Readings & Frameworks
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Scout Mindset Card -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-emerald-600 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-emerald-800 uppercase tracking-wide">Scout Mindset</span>
+                            <span class="text-xs text-slate-400">Julia Galef</span>
+                        </div>
+                        <h3 class="font-bold text-slate-900 text-sm">Questioning Assumptions</h3>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Rather than adopting a "Soldier Mindset" blaming student apathy, our scout audit revealed students over-scooped because they feared long refill queue delays. This shaped our <strong>Fast-Track Refill Pass</strong> solution.
+                        </p>
+                    </div>
+
+                    <!-- Factfulness Card -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-amber-500 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-amber-800 uppercase tracking-wide">Factfulness</span>
+                            <span class="text-xs text-slate-400">Hans Rosling</span>
+                        </div>
+                        <h3 class="font-bold text-slate-900 text-sm">Overcoming Negativity Instinct</h3>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Avoiding dramatic generalizations, we established baseline daily weighing (41.5 kg/meal). Hard empirical data proved small behavioral nudges yield a consistent <strong>28.4% to 33.6% waste drop</strong>.
+                        </p>
+                    </div>
+
+                    <!-- Superforecasting Card -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-indigo-600 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-indigo-800 uppercase tracking-wide">Superforecasting</span>
+                            <span class="text-xs text-slate-400">Philip Tetlock</span>
+                        </div>
+                        <h3 class="font-bold text-slate-900 text-sm">Updating Priors with Micro-Pilots</h3>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            We initially forecasted a modest 15% reduction. After running a 1-day table-card pilot, we updated our prior estimates to 30%, which matched our actual 33.6% outcome almost exactly.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Viva Team Readiness Summary Box -->
+            <div class="bg-brand-900 text-white rounded-2xl p-6 shadow-md flex flex-col md:flex-row items-center justify-between gap-6">
+                <div class="space-y-1 text-center md:text-left">
+                    <span class="bg-brand-700 text-brand-100 text-[10px] font-bold px-2.5 py-0.5 rounded uppercase">
+                        23 November Viva Readiness
+                    </span>
+                    <h3 class="text-lg font-bold">Group 04 • 8 Members Prepared for Evaluation</h3>
+                    <p class="text-xs text-brand-100/80">Every member has designated roles across audit weighing, survey sampling, nudge design, and BU100 theory defence.</p>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button onclick="switchTab('kiosk')" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition shadow">
+                        <i class="fa-solid fa-play mr-1"></i> Launch Kiosk Demo
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Global App Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-8 text-center text-xs text-slate-500">
+        <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div>
+                <strong>Bennett University</strong> • BMI-TREP Semester 1 SDG Action Lab
+            </div>
+            <div>
+                SDG 12: Responsible Consumption and Production • Group 04
+            </div>
+        </div>
+    </footer>
+
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // --- GLOBAL APP STATE & DATA ---
+        let currentHunger = 'medium';
+        let totalPledges = 142;
+        
+        // Mess Menu Items
+        const menuItems = [
+            { id: 'rice', name: 'Steamed Basmati Rice', type: 'carbs', defaultQty: '1 Scoop (120g)', lightQty: '0.5 Scoop (60g)', hungryQty: '1.5 Scoops (180g)' },
+            { id: 'dal', name: 'Dal Tadka / Gravy', type: 'curry', defaultQty: '1 Ladle (100g)', lightQty: '0.5 Ladle (50g)', hungryQty: '1.5 Ladles (150g)' },
+            { id: 'roti', name: 'Whole Wheat Roti / Chapati', type: 'bread', defaultQty: '2 Pieces', lightQty: '1 Piece', hungryQty: '3 Pieces' },
+            { id: 'sabzi', name: 'Paneer Butter Masala', type: 'curry', defaultQty: '1 Small Bowl', lightQty: '0.5 Bowl', hungryQty: '1 Bowl' },
+            { id: 'mixveg', name: 'Seasoned Mixed Veg', type: 'sides', defaultQty: '1 Katori', lightQty: '0.5 Katori', hungryQty: '1 Katori' },
+            { id: 'curd', name: 'Boondi Raita / Curd', type: 'sides', defaultQty: '1 Cup', lightQty: '1 Cup', hungryQty: '1 Cup' }
+        ];
+
+        let selectedMenuIds = ['rice', 'dal', 'roti', 'sabzi'];
+
+        // Sample Audit Log Data (16 Nov - 23 Nov 2026)
+        let auditLog = [
+            { id: 1, time: '23 Nov, 1:15 PM', session: 'Lunch', item: 'Steamed Rice', weight: 35, smart: 'Yes' },
+            { id: 2, time: '23 Nov, 1:10 PM', session: 'Lunch', item: 'Dal Tadka', weight: 40, smart: 'Yes' },
+            { id: 3, time: '23 Nov, 1:02 PM', session: 'Lunch', item: 'Roti / Chapati', weight: 110, smart: 'No' },
+            { id: 4, time: '22 Nov, 8:30 PM', session: 'Dinner', item: 'Paneer / Sabzi', weight: 28, smart: 'Yes' },
+            { id: 5, time: '22 Nov, 8:15 PM', session: 'Dinner', item: 'Steamed Rice', weight: 42, smart: 'Yes' },
+            { id: 6, time: '22 Nov, 1:30 PM', session: 'Lunch', item: 'Salad & Curd', weight: 125, smart: 'No' },
+            { id: 7, time: '21 Nov, 8:40 PM', session: 'Dinner', item: 'Roti / Chapati', weight: 30, smart: 'Yes' },
+            { id: 8, time: '21 Nov, 1:20 PM', session: 'Lunch', item: 'Steamed Rice', weight: 38, smart: 'Yes' }
+        ];
+
+        // --- INITIALIZATION ON WINDOW LOAD ---
+        window.onload = function() {
+            renderMenuChecklist();
+            renderPortionBreakdown();
+            renderAuditTable();
+            initImpactCharts();
+        };
+
+        // --- TAB NAVIGATION SYSTEM ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-brand-700', 'text-white', 'shadow');
+                btn.classList.add('text-slate-300');
+            });
+
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            activeBtn.classList.add('bg-brand-700', 'text-white', 'shadow');
+            activeBtn.classList.remove('text-slate-300');
+        }
+
+        // --- KIOSK LOGIC ---
+        function setHunger(level) {
+            currentHunger = level;
+            document.querySelectorAll('.hunger-btn').forEach(btn => {
+                btn.classList.remove('border-brand-600', 'bg-brand-50/50', 'shadow-sm');
+                btn.classList.add('border-slate-200');
+            });
+
+            const activeBtn = document.getElementById(`hunger-${level}`);
+            activeBtn.classList.add('border-brand-600', 'bg-brand-50/50', 'shadow-sm');
+
+            renderPortionBreakdown();
+        }
+
+        function renderMenuChecklist() {
+            const container = document.getElementById('menu-checklist');
+            container.innerHTML = menuItems.map(item => {
+                const isChecked = selectedMenuIds.includes(item.id);
+                return `
+                    <label class="flex items-center justify-between p-2.5 rounded-xl border ${isChecked ? 'border-brand-300 bg-brand-50/30' : 'border-slate-200'} cursor-pointer hover:bg-slate-50 transition">
+                        <div class="flex items-center space-x-3">
+                            <input type="checkbox" onchange="toggleMenuItem('${item.id}')" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-brand-600 rounded focus:ring-brand-500">
+                            <span class="font-medium text-slate-800 text-xs">${item.name}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400 font-mono uppercase">${item.type}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function toggleMenuItem(id) {
+            if (selectedMenuIds.includes(id)) {
+                selectedMenuIds = selectedMenuIds.filter(item => item !== id);
+            } else {
+                selectedMenuIds.push(id);
+            }
+            renderMenuChecklist();
+            renderPortionBreakdown();
+        }
+
+        function renderPortionBreakdown() {
+            const container = document.getElementById('portion-breakdown');
+            const selectedItems = menuItems.filter(i => selectedMenuIds.includes(i.id));
+
+            if (selectedItems.length === 0) {
+                container.innerHTML = `<p class="text-slate-400 italic text-center py-4">Select menu items to see portion guide.</p>`;
+                return;
+            }
+
+            let wastePrevented = 30; // base grams saved
+            if (currentHunger === 'light') wastePrevented = 60;
+            if (currentHunger === 'medium') wastePrevented = 45;
+            if (currentHunger === 'hungry') wastePrevented = 25;
+
+            document.getElementById('kiosk-waste-prevented').innerText = `+${wastePrevented}g`;
+
+            // Update Circle Plate Diagram text
+            const riceItem = selectedItems.find(i => i.type === 'carbs');
+            const dalItem = selectedItems.find(i => i.type === 'curry');
+            const breadItem = selectedItems.find(i => i.type === 'bread');
+
+            document.getElementById('plate-carbs-qty').innerText = riceItem ? getQty(riceItem) : 'N/A';
+            document.getElementById('plate-curry-qty').innerText = dalItem ? getQty(dalItem) : 'N/A';
+            document.getElementById('plate-bread-qty').innerText = breadItem ? getQty(breadItem) : 'N/A';
+
+            container.innerHTML = selectedItems.map(item => `
+                <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                    <span class="font-semibold text-slate-700">${item.name}</span>
+                    <span class="font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded text-[11px]">
+                        ${getQty(item)}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        function getQty(item) {
+            if (currentHunger === 'light') return item.lightQty;
+            if (currentHunger === 'hungry') return item.hungryQty;
+            return item.defaultQty;
+        }
+
+        function confirmPledge() {
+            totalPledges++;
+            document.getElementById('header-pledge-count').innerText = totalPledges;
+            showToast('Pledge Confirmed!', 'Fast-Track Refill Pass active. Enjoy your meal with zero food waste!');
+        }
+
+
+        // --- SCALE & LOGGING LOGIC ---
+        function handleScaleSubmit(e) {
+            e.preventDefault();
+            const item = document.getElementById('log-item').value;
+            const weight = parseInt(document.getElementById('log-weight').value);
+            const session = document.querySelector('input[name="session"]:checked').value;
+            const smart = document.querySelector('input[name="used_smart"]:checked').value;
+
+            const newEntry = {
+                id: Date.now(),
+                time: 'Just Now',
+                session: session,
+                item: item,
+                weight: weight,
+                smart: smart
+            };
+
+            auditLog.unshift(newEntry);
+            renderAuditTable();
+            updateScaleKPIs();
+            showToast('Entry Logged!', `${weight}g of ${item} added to Dish-Drop audit log.`);
+        }
+
+        function renderAuditTable() {
+            const tbody = document.getElementById('audit-table-body');
+            tbody.innerHTML = auditLog.map(row => `
+                <tr class="hover:bg-slate-50 border-b border-slate-100">
+                    <td class="p-2.5 text-slate-600 font-mono">${row.time}</td>
+                    <td class="p-2.5 font-medium text-slate-800">${row.session}</td>
+                    <td class="p-2.5 font-semibold text-slate-900">${row.item}</td>
+                    <td class="p-2.5 font-bold ${row.weight > 100 ? 'text-red-600' : 'text-emerald-700'}">${row.weight}g</td>
+                    <td class="p-2.5">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${row.smart === 'Yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}">
+                            ${row.smart}
+                        </span>
+                    </td>
+                    <td class="p-2.5 text-right">
+                        <button onclick="deleteAuditEntry(${row.id})" class="text-slate-400 hover:text-red-500">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function deleteAuditEntry(id) {
+            auditLog = auditLog.filter(e => e.id !== id);
+            renderAuditTable();
+            updateScaleKPIs();
+        }
+
+        function resetAuditLog() {
+            auditLog = [
+                { id: 1, time: '23 Nov, 1:15 PM', session: 'Lunch', item: 'Steamed Rice', weight: 35, smart: 'Yes' },
+                { id: 2, time: '23 Nov, 1:10 PM', session: 'Lunch', item: 'Dal Tadka', weight: 40, smart: 'Yes' },
+                { id: 3, time: '23 Nov, 1:02 PM', session: 'Lunch', item: 'Roti / Chapati', weight: 110, smart: 'No' },
+                { id: 4, time: '22 Nov, 8:30 PM', session: 'Dinner', item: 'Paneer / Sabzi', weight: 28, smart: 'Yes' }
+            ];
+            renderAuditTable();
+            updateScaleKPIs();
+            showToast('Data Reset', 'Restored initial sample audit records.');
+        }
+
+        function updateScaleKPIs() {
+            if (auditLog.length === 0) return;
+            const avg = Math.round(auditLog.reduce((acc, r) => acc + r.weight, 0) / auditLog.length);
+            document.getElementById('kpi-avg-waste').innerText = `${avg}g`;
+            document.getElementById('header-waste-avg').innerText = `${avg}.0`;
+        }
+
+
+        // --- CHART.JS VISUALIZATION LOGIC ---
+        function initImpactCharts() {
+            // Chart 1: Daily Waste Trend (Nov 16 - Nov 22)
+            const ctxDaily = document.getElementById('chart-daily-waste').getContext('2d');
+            new Chart(ctxDaily, {
+                type: 'line',
+                data: {
+                    labels: ['Nov 16 (Base)', 'Nov 17 (Base)', 'Nov 18 (Base)', 'Nov 19 (Pilot)', 'Nov 20 (Pilot)', 'Nov 21 (Pilot)', 'Nov 22 (Pilot)'],
+                    datasets: [
+                        {
+                            label: 'Edible Waste per Diner (Grams)',
+                            data: [124.5, 120.2, 121.3, 102.4, 91.0, 84.5, 81.0],
+                            borderColor: '#2E6F56',
+                            backgroundColor: 'rgba(46, 111, 86, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.3,
+                            pointBackgroundColor: '#1B3B2E',
+                            pointRadius: 5
+                        },
+                        {
+                            label: 'Baseline Target (122.0g)',
+                            data: [122, 122, 122, 122, 122, 122, 122],
+                            borderColor: '#CBD5E1',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { size: 11 } } }
+                    },
+                    scales: {
+                        y: { beginAtZero: false, min: 60, title: { display: true, text: 'Grams / Diner' } }
+                    }
+                }
+            });
+
+            // Chart 2: Pre vs Post Survey Shift
+            const ctxSurvey = document.getElementById('chart-survey-shift').getContext('2d');
+            new Chart(ctxSurvey, {
+                type: 'bar',
+                data: {
+                    labels: ['Over-Scoop Fear', 'Refill Confidence', 'Portion Awareness'],
+                    datasets: [
+                        {
+                            label: 'Pre-Pilot Survey',
+                            data: [68, 32, 28],
+                            backgroundColor: '#94A3B8'
+                        },
+                        {
+                            label: 'Post-Pilot Survey',
+                            data: [24, 88, 84],
+                            backgroundColor: '#D97706'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { size: 11 } } }
+                    },
+                    scales: {
+                        y: { max: 100, title: { display: true, text: '% of Students (n=25)' } }
+                    }
+                }
+            });
+        }
+
+
+        // --- TOAST NOTIFICATION HELPER ---
+        function showToast(title, message) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast-slide bg-brand-900 text-white border border-brand-700 px-4 py-3 rounded-xl shadow-xl flex items-start space-x-3 pointer-events-auto max-w-sm';
+            toast.innerHTML = `
+                <div class="text-emerald-400 text-lg"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="flex-1">
+                    <h4 class="font-bold text-xs text-white">${title}</h4>
+                    <p class="text-[11px] text-slate-300 mt-0.5">${message}</p>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
